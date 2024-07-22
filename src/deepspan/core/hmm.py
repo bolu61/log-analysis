@@ -1,7 +1,4 @@
-from collections.abc import Generator, Iterable, Sequence
-from functools import partial
 from typing import Any, Optional
-from itertools import islice
 
 import flax.linen as nn
 import jax
