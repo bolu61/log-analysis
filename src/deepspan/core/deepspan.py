@@ -1,14 +1,13 @@
-from flax.typing import Array
+from functools import partial
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+from flax.typing import Array
 
-from functools import partial
 
-
-@partial(jax.jit, static_argnames=('axis',))
-def reglu(x: Array, axis: int=-1) -> Array:
+@partial(jax.jit, static_argnames=("axis",))
+def reglu(x: Array, axis: int = -1) -> Array:
     assert x.shape[axis] % 2 == 0
     a, b = jnp.split(x, 2, axis)
     return a + nn.relu(b)
@@ -17,6 +16,7 @@ def reglu(x: Array, axis: int=-1) -> Array:
 class FeedForward(nn.Module):
     dim: int
     features: int
+
     @nn.compact
     def __call__(self, x: Array, dropout_rate=0) -> Array:
         l1 = nn.Dense(self.dim * 2)
@@ -28,19 +28,20 @@ class FeedForward(nn.Module):
 
 class GRU(nn.Module):
     dim: int
+
     @nn.compact
     def __call__(self, xs: Array, dropout_rate=0) -> Array:
-        state = self.param(f"initial_state", nn.initializers.normal(), (self.dim,))
+        state = self.param("initial_state", nn.initializers.normal(), (self.dim,))
         rnn = nn.RNN(nn.GRUCell(self.dim))
         linear = nn.Dense(self.dim)
         dropout = nn.Dropout(rate=dropout_rate, deterministic=False)
         norm = nn.LayerNorm()
-        return norm(xs + rnn(xs, initial_carry=state))
+        return norm(xs + linear(dropout(rnn(xs, initial_carry=state))))
 
 
 class DeepSpanLayer(nn.Module):
-    dim: int=256
-    ffn_dim: int=1024
+    dim: int = 256
+    ffn_dim: int = 1024
 
     @nn.compact
     def __call__(self, xs: Array, dropout_rate=0) -> Array:
@@ -50,10 +51,10 @@ class DeepSpanLayer(nn.Module):
 
 
 class DeepSpan(nn.Module):
-    num_observations: int=64
-    num_layers: int=1
-    dim: int=256
-    ffn_dim: int=1024
+    num_observations: int = 64
+    num_layers: int = 1
+    dim: int = 256
+    ffn_dim: int = 1024
 
     @nn.compact
     def __call__(self, xs: Array, dropout_rate=0) -> Array:
