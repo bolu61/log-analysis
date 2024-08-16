@@ -1,5 +1,5 @@
 from collections import defaultdict
-from collections.abc import Generator, Iterator, Sequence
+from collections.abc import Generator, Iterator, Sequence, Iterable
 
 from .database import Database
 
@@ -52,31 +52,40 @@ class DictTrie[K]:
         return sorted(self._children.keys(), reverse=True, key=lambda k: self._children[k]._count)
 
 
-type Index = list[tuple[int, int]]
+type Index = tuple[int, int]
 
 
 def project[
     T
-](db: Database[T], index: Index, s: T) -> Generator[tuple[int, int], None, None]:
-    for i, j in index:
+](db: Database[T], indexes: Iterable[Index], s: T) -> Generator[tuple[int, int], None, None]:
+    for i, j in indexes:
         try:
             yield i, db[i].index(s, j) + 1
         except ValueError:
             continue
+        
+
+def unique[T](it: Iterable[T]) -> Generator[T, None, None]:
+    seen = set()
+    for t in it:
+        if t in seen:
+            continue
+        yield t
+        seen.add(t)
 
 
 def prefixspan[T](db: Database[T], minsup: int) -> DictTrie[T]:
-    def rec(index: Index):
-        t = DictTrie[T](len(index))
+    def rec(indexes: list[Index]):
+        t = DictTrie[T](len(indexes))
         count = defaultdict[T, int](lambda: 0)
-        for i, j in index:
-            for s in set(db[i][j:]):
+        for i, j in indexes:
+            for s in unique(db[i][j:]):
                 count[s] += 1
 
         for s, c in count.items():
             if c < minsup:
                 continue
-            t.insert(s, rec([*project(db, index, s)]))
+            t.insert(s, rec([*project(db, indexes, s)]))
 
         return t
 

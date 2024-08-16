@@ -1,5 +1,4 @@
 from collections.abc import Callable, Generator, Iterable
-from itertools import islice
 
 from .core.trie import Trie
 
@@ -37,7 +36,7 @@ def separate[
 ](trie: Trie[K], seq: Iterable[T], maxlen: int, key: Callable[[T], K] = lambda x: x) -> Generator[
     list[T], None, None
 ]:
-    seq_list: list[T] = [*seq]
+    seq_list = [*seq]
     while len(seq_list) > 0:
         keys = [key(s) for s in seq_list[:maxlen]]
         extracted = extract([*match(trie, keys)], seq_list)

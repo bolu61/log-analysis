@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 import flax.linen as nn
 import jax
@@ -73,104 +73,62 @@ class InterleavedHiddenMarkovChain(nn.Module):
         )
 
 
-def interleaved_ergodic_hidden_markov_chain(
-    interleaving: int, states: int, alphabet: Optional[int], shape=1
-):
+def interleaved_random_hmm(num_chains: int, num_states: int):
     """Random Ergodic Hidden Markov Chain
-    transition weights are sampled from a beta distribution.
+    transition weights are sampled from a arcsine distribution.
     """
-    if alphabet is None:
-        alphabet = states
-
-    shape = jnp.clip(shape, 0.1, 0.9)
 
     def transition_initializer(key, shape_, dtype):
         key, subkey = jax.random.split(key)
         t = jnp.log(
             jax.random.beta(
                 subkey,
-                a=1 - shape,
-                b=shape,
+                a=0.5,
+                b=0.5,
                 shape=shape_,
                 dtype=dtype,
             )
         )
         return t
 
-    def emission_initializer(key, shape, dtype):
-        interleaving, states, alphabet = shape
-        e = jax.vmap(
-            lambda key: jax.random.permutation(
-                key, jnp.eye(states, alphabet, dtype=dtype)
-            )
-        )(jax.random.split(key, interleaving))
-        return jnp.clip(jnp.log(e), -1e8)
-
-    return InterleavedHiddenMarkovChain(
-        interleaving,
-        states,
-        alphabet,
-        transition_initializer=transition_initializer,
-        emission_initializer=emission_initializer,
-    )
-
-
-def interleaved_cyclic_markov_chain(
-    interleaving, states: int, alphabet: Optional[int] = None
-):
-    if alphabet is None:
-        alphabet = states
-
-    def transition_initializer(key, shape, dtype):
-        interleaving, states, states = shape
-        t = jnp.eye(states, dtype=dtype)
-        t = jnp.roll(t, 1, axis=-1)
-        t = jnp.repeat(t[jnp.newaxis, :, :], interleaving, axis=0)
-        return jnp.clip(jnp.log(t), -1e8)
-
-    def emission_initializer(key, shape, dtype):
-        interleaving, states, alphabet = shape
-        e = jax.vmap(
-            lambda key: jax.random.permutation(
-                key, jnp.eye(states, alphabet, dtype=dtype)
-            )
-        )(jax.random.split(key, interleaving))
-        return jnp.clip(jnp.log(e), -1e8)
-
-    return InterleavedHiddenMarkovChain(
-        interleaving,
-        states,
-        alphabet,
-        transition_initializer=transition_initializer,
-        emission_initializer=emission_initializer,
-    )
-
-
-def interleaved_markov_chain(num_chains, num_states):
-    def apply_log(f):
-        def wrapped(*args):
-            return jnp.log(f(*args))
-        return wrapped
-
-    @apply_log
-    def transition_initializer(_, shape, dtype):
-        num_chains, num_states, num_states = shape
-        m = jnp.eye(num_states, dtype=dtype)
-        m = jnp.roll(m, 1, axis=-1)
-        return jnp.tile(m, (num_chains, 1, 1))
-
-    @apply_log
     def emission_initializer(_, shape, dtype):
         num_chains, num_states, num_symbols = shape
+
         def make_matrix(i):
             eye = jnp.eye(num_states, num_symbols, dtype=dtype)
             return jnp.roll(eye, i * num_states, axis=-1)
-        return jax.vmap(make_matrix)(jnp.arange(num_chains))
+
+        return jnp.log(jax.vmap(make_matrix)(jnp.arange(num_chains)))
 
     return InterleavedHiddenMarkovChain(
         num_chains=num_chains,
         num_states=num_states,
         num_symbols=num_chains * num_states,
         transition_initializer=transition_initializer,
-        emission_initializer=emission_initializer
+        emission_initializer=emission_initializer,
+    )
+
+
+def interleaved_cyclic_hmm(num_chains: int, num_states: int):
+    def transition_initializer(_, shape, dtype):
+        num_chains, num_states, num_states = shape
+        m = jnp.eye(num_states, dtype=dtype)
+        m = jnp.roll(m, 1, axis=-1)
+        return jnp.log(jnp.tile(m, (num_chains, 1, 1)))
+
+    def emission_initializer(_, shape, dtype):
+        num_chains, num_states, num_symbols = shape
+
+        def make_matrix(i):
+            eye = jnp.eye(num_states, num_symbols, dtype=dtype)
+            return jnp.roll(eye, i * num_states, axis=-1)
+
+        return jnp.log(jax.vmap(make_matrix)(jnp.arange(num_chains)))
+
+    return InterleavedHiddenMarkovChain(
+        num_chains=num_chains,
+        num_states=num_states,
+        num_symbols=num_chains * num_states,
+        transition_initializer=transition_initializer,
+        emission_initializer=emission_initializer,
     )

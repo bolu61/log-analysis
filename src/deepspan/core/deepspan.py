@@ -1,13 +1,23 @@
+from collections.abc import Callable
 from functools import partial
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
-from flax.typing import Array
+
+__all__ = ["DeepSpan"]
+
+
+def apply_dropout[**A, B](f: Callable[A, B], dropout_rate: float) -> Callable[A, B]:
+    def wrapper(*args: A.args, **kwargs: A.kwargs) -> B:
+        kwargs.setdefault("dropout_rate", dropout_rate)
+        return f(*args, **kwargs)
+
+    return wrapper
 
 
 @partial(jax.jit, static_argnames=("axis",))
-def reglu(x: Array, axis: int = -1) -> Array:
+def reglu(x: jax.Array, axis: int = -1) -> jax.Array:
     assert x.shape[axis] % 2 == 0
     a, b = jnp.split(x, 2, axis)
     return a + nn.relu(b)
@@ -18,7 +28,7 @@ class FeedForward(nn.Module):
     features: int
 
     @nn.compact
-    def __call__(self, x: Array, dropout_rate=0) -> Array:
+    def __call__(self, x: jax.Array, dropout_rate: float = 0) -> jax.Array:
         l1 = nn.Dense(self.dim * 2)
         l2 = nn.Dense(self.features)
         dropout = nn.Dropout(rate=dropout_rate, deterministic=False)
@@ -30,13 +40,17 @@ class GRU(nn.Module):
     dim: int
 
     @nn.compact
-    def __call__(self, xs: Array, dropout_rate=0) -> Array:
+    def __call__(self, xs: jax.Array, dropout_rate: float = 0) -> jax.Array:
         state = self.param("initial_state", nn.initializers.normal(), (self.dim,))
-        rnn = nn.RNN(nn.GRUCell(self.dim))
+        cell = nn.GRUCell(self.dim)
+        @partial(nn.scan, variable_broadcast="params", split_rngs={"params": False}, in_axes=0, out_axes=0)
+        def scan(cell, carry, x):
+            return cell(carry, x)
         linear = nn.Dense(self.dim)
         dropout = nn.Dropout(rate=dropout_rate, deterministic=False)
         norm = nn.LayerNorm()
-        return norm(xs + linear(dropout(rnn(xs, initial_carry=state))))
+        state, ys = scan(cell, state, xs)
+        return norm(xs + linear(dropout(reglu(ys))))
 
 
 class DeepSpanLayer(nn.Module):
@@ -44,10 +58,10 @@ class DeepSpanLayer(nn.Module):
     ffn_dim: int = 1024
 
     @nn.compact
-    def __call__(self, xs: Array, dropout_rate=0) -> Array:
-        xs = GRU(self.dim)(xs, dropout_rate=dropout_rate)
-        xs = FeedForward(self.ffn_dim, self.dim)(xs, dropout_rate=dropout_rate)
-        return xs
+    def __call__(self, xs: jax.Array, dropout_rate: float = 0) -> jax.Array:
+        gru = apply_dropout(GRU(self.dim), dropout_rate)
+        ffn = apply_dropout(FeedForward(self.ffn_dim, self.dim), dropout_rate)
+        return ffn(gru(xs))
 
 
 class DeepSpan(nn.Module):
@@ -57,9 +71,8 @@ class DeepSpan(nn.Module):
     ffn_dim: int = 1024
 
     @nn.compact
-    def __call__(self, xs: Array, dropout_rate=0) -> Array:
+    def __call__(self, xs: jax.Array, dropout_rate: float = 0) -> jax.Array:
         xs = nn.Embed(self.num_observations, self.dim)(xs)
         for _ in range(self.num_layers):
             xs = DeepSpanLayer(self.dim, self.ffn_dim)(xs, dropout_rate=dropout_rate)
-        xs = nn.Dense(self.num_observations)(xs)
-        return nn.sigmoid(xs)
+        return nn.Dense(self.num_observations)(xs)

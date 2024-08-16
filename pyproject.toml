@@ -28,7 +28,7 @@ Source = "https://github.com/unknown/worklog"
 source = "vcs"
 
 [tool.hatch.build]
-packages = ["src/deepspan"]
+packages = ["src/deepspan", "src/experiments/deepspan-deinterleave"]
 
 [tool.hatch.envs.experiments]
 dependencies = [
