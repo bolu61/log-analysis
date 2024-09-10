@@ -28,10 +28,11 @@ Source = "https://github.com/unknown/worklog"
 source = "vcs"
 
 [tool.hatch.build]
-packages = ["src/deepspan", "src/experiments/deepspan-deinterleave"]
+packages = ["src/deepspan", "src/experiments/log_analysis/deepspan_deinterleave"]
 
-[tool.hatch.envs.experiments]
+[tool.hatch.envs.default]
 dependencies = [
-  "pandas",
-  "tqdm"
+	"tqdm",
+	"pygit2",
+	"pandas",
 ]
