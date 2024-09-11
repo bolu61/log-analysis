@@ -14,7 +14,7 @@ authors = [
   { name = "bolu", email = "bolu@bolupi.me" },
 ]
 dependencies = [
-  "prefixspan @ git+https://github.com/bolu61/prefixspan@v0.1.6-alpha",
+  "prefixspan @ git+https://github.com/bolu61/prefixspan@v0.1.7-alpha",
   "jax==0.4.20",
   "flax==0.7.5",
   "optax==0.1.7",
