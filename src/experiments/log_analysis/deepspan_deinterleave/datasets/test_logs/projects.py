@@ -88,8 +88,7 @@ def cache_repo(url, path: Path) -> Repository:
         repo.reset("HEAD", ResetMode.HARD)
         return repo
     except ValueError:
-        for subpath in path.iterdir():
-            rmtree(subpath, ignore_errors=True)
+        rmtree(path, ignore_errors=True)
         repo = clone_repository(url, str_path, depth=0)
         return cast(Repository, repo)
 
