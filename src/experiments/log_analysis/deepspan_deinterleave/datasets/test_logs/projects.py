@@ -80,17 +80,15 @@ def cache_dir(*name: str) -> Path:
 
 @traceit
 def cache_repo(url, path: Path) -> Repository:
-    str_path = str(path)
     try:
-        if discover_repository(str_path) is None:
+        if discover_repository(str(path)) is None:
             raise ValueError()
-        repo = Repository(str_path)
-        repo.reset("HEAD", ResetMode.HARD)
+        repo = Repository(str(path))
         return repo
     except ValueError:
         rmtree(path, ignore_errors=True)
-        repo = clone_repository(url, str_path, depth=0)
-        return cast(Repository, repo)
+        repo = cast(Repository, clone_repository(url, str(path), depth=0))
+        return repo
 
 
 @dataclass
