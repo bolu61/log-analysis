@@ -53,7 +53,7 @@ def main():
         if os.getenv("DEBUG"):
             logger.setLevel(logging.DEBUG)
         for project in tqdm(subjects()):
-            tqdm.write(str(project))
+            tqdm.write(str(project.path))
 
 
 def traceit[**A, B](f: Callable[A, B]) -> Callable[A, B]:
