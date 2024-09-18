@@ -15,12 +15,12 @@ authors = [
 ]
 dependencies = [
   "prefixspan @ git+https://github.com/bolu61/prefixspan@v0.1.7-alpha",
-  "jax==0.4.20",
-  "flax==0.7.5",
-  "optax==0.1.7",
-  "scipy==1.11.4",
-  "cliffs-delta==1.0.0",
-  "tqdm==4.66.1",
+  "jax",
+  "flax",
+  "optax",
+  "scipy",
+  "cliffs-delta",
+  "tqdm",
 ]
 
 [project.urls]
@@ -39,6 +39,8 @@ dependencies = [
 	"tqdm",
 	"pygit2",
 	"pandas",
+	"logparse @ git+https://github.com/senseuwaterloo/logparse@main",
+	"python-dateutil"
 ]
 
 [tool.hatch.metadata]

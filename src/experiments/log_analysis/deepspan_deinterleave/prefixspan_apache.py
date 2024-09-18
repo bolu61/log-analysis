@@ -7,8 +7,8 @@ from pandas import Series
 
 from deepspan.core.prefixspan import prefixspan
 from deepspan.separate import separate
-from experiments.deepspan_deinterleave.datasets.real import make_database
-from experiments.deepspan_deinterleave.metrics.grouping import grouping_length
+from experiments.log_analysis.deepspan_deinterleave.datasets.real import make_database
+from experiments.log_analysis.deepspan_deinterleave.metrics.grouping import grouping_length
 
 NUM_STATES = 8
 NUM_CHAINS = 3
@@ -17,18 +17,19 @@ LEN_DATASET = 10_000
 MINSUP = 2_000
 
 
+SUBJECTS = ["org.apache.zookeeper"]
+
+
 def as_id(event_id: str) -> int:
     return int(event_id[1:])
 
 
 def main():
-    df = pd.read_csv(
-        Path(__file__).parent / "datasets" / "samples" / "OpenSSH_2k.log_structured.csv"
-    )
-    df.index = pd.to_datetime(df.Date + " " + df.Time)  # type: ignore
-    df = df.sort_index()
-    sequence = df.EventId.apply(lambda i: int(i[1:]))
-    database = sample(make_database(sequence, window_size="8s", min_length=2), 2000)
+    for subject in SUBJECTS:
+        database = make_database(subject, window_size="8s", min_length=2)
+        print(database)
+        return
+    return
 
     trie = prefixspan([*map(lambda a: a.tolist(), database)], minsup=int(len(database) * 0.2))
 
