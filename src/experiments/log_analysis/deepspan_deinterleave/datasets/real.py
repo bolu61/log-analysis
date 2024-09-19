@@ -1,9 +1,9 @@
 import re
+import warnings
 from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, cast
-import warnings
+from typing import Iterable
 
 import jax
 import jax.numpy as jnp
@@ -11,6 +11,8 @@ import pandas as pd
 from dateutil.parser import parse as parse_dt
 from logparse.drain3 import parser as drain3
 from logparse.parser import Parser
+
+from experiments.log_analysis.deepspan_deinterleave.datasets import Dataset
 
 LOGS_BASE_PATH = Path(__file__).parent / "apache" / "logs"
 LOGS_FORMAT_PATTERN = re.compile(
@@ -24,7 +26,7 @@ def get_paths(name: str) -> Generator[Path, None, None]:
 
 
 def make_parser(name: str) -> Parser:
-    lines = []
+    lines: list[str] = []
     for path in get_paths(name):
         with path.open("r") as file:
             if len([*file]) < MIN_FILE_SIZE:
@@ -34,34 +36,39 @@ def make_parser(name: str) -> Parser:
 
 
 def preprocess(
-    parser: Parser, lines: Iterable[str]
-) -> Generator[tuple[datetime, int], None, None]:
+    parser: Parser,
+    lines: Iterable[str],
+) -> pd.Series:
+    timestamps: list[datetime] = []
+    event_ids: list[int] = []
     for line in lines:
         match = LOGS_FORMAT_PATTERN.match(line)
         if match is None:
             continue
-        timestamp = parse_dt(
-            match.group("timestamp"),
+        timestamps.append(
+            parse_dt(
+                match.group("timestamp"),
+            )
         )
-        event_id = next(parser([match.group("message")])).id
-        yield timestamp, event_id
+        event_ids.append(next(parser([match.group("message")])).id)
+    return pd.Series(event_ids, timestamps, dtype=int)
 
 
-def make_database(name: str, window_size, min_length) -> list[jax.Array]:
+def make_database(name: str, window_size, min_length) -> Dataset:
     if not LOGS_BASE_PATH.exists():
         raise RuntimeError(f"{LOGS_BASE_PATH=} does not exist")
 
     parser = make_parser(name)
 
-    def windows():
-        for path in get_paths(name):
-            with path.open("r") as file:
-                records = [*preprocess(parser, file)]
-                if len(records) == 0:
-                    warnings.warn(f"no logs parsed in {file=}")
-                    continue
-                seq = pd.DataFrame(records).set_index(0)[1].sort_index()
-            for w in seq.rolling(window_size, min_periods=min_length):
-                yield jnp.asarray(w.values)
+    items = []
+    for path in get_paths(name):
+        with path.open("r") as file:
+            seq = preprocess(parser, file)
+            if seq.empty:
+                warnings.warn(f"no logs parsed in {file=}")
+                continue
+            seq.sort_index(inplace=True)
+        for w in seq.rolling(window_size, min_periods=min_length):
+            items.append(jnp.asarray(w.values, copy=False))
 
-    return list(windows())
+    return items

@@ -27,19 +27,16 @@ def as_id(event_id: str) -> int:
 def main():
     for subject in SUBJECTS:
         database = make_database(subject, window_size="8s", min_length=2)
-        print(database)
-        return
-    return
 
-    trie = prefixspan([*map(lambda a: a.tolist(), database)], minsup=int(len(database) * 0.2))
+    # trie = prefixspan([*map(lambda a: a.tolist(), database)], minsup=int(len(database) * 0.2))
 
-    groups = []
-    for group in separate(
-        trie, df.to_records(), maxlen=24, key=lambda x: as_id(x.EventId)
-    ):
-        groups.append(jnp.array([as_id(g.EventId) for g in group]))
+    # groups = []
+    # for group in separate(
+    #     trie, df.to_records(), maxlen=24, key=lambda x: as_id(x.EventId)
+    # ):
+    #     groups.append(jnp.array([as_id(g.EventId) for g in group]))
 
-    print(f"grouping_length: {grouping_length(groups)}")
+    # print(f"grouping_length: {grouping_length(groups)}")
 
 
 if __name__ == "__main__":

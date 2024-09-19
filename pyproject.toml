@@ -16,6 +16,7 @@ authors = [
 dependencies = [
   "prefixspan @ git+https://github.com/bolu61/prefixspan@v0.1.7-alpha",
   "jax",
+  "jaxtyping",
   "flax",
   "optax",
   "scipy",
