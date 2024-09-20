@@ -1,10 +1,13 @@
 import sys
 from pathlib import Path
+from typing import Any
 
-import flax.linen as nn
 import jax
-import jax.numpy as jnp
 import optax
+from experiments.log_analysis.deepspan_deinterleave.datasets.synthetic import (
+    cyclic_sequence_generator,
+    make_dataset,
+)
 from orbax.checkpoint import (
     CheckpointManager,
     CheckpointManagerOptions,
@@ -14,10 +17,6 @@ from tqdm import tqdm
 
 from deepspan.core.deepspan import DeepSpan
 from deepspan.train import Trainer
-from experiments.deepspan_deinterleave.datasets import make_dataset
-from experiments.deepspan_deinterleave.datasets.synthetic import (
-    cyclic_sequence_generator,
-)
 
 __all__ = ()
 
@@ -47,7 +46,7 @@ def main(*_):
         num_states=NUM_STATES,
     )
 
-    dataset = make_dataset(next(sequences), LEN_SEQUENCE)
+    dataset = jax.tree.map(make_dataset, next(sequences), LEN_SEQUENCE)
 
     model = DeepSpan(
         num_observations=NUM_STATES * NUM_CHAINS,
@@ -62,7 +61,7 @@ def main(*_):
         dataset=dataset,
         batch_size=1,
         dropout_rate=0.2,
-        ema_decay=0.9
+        ema_decay=0.9,
     )
 
     checkpoint_directory = Path("checkpoints/deepspan_cyclic").absolute()
@@ -75,18 +74,28 @@ def main(*_):
 
     for epoch in range(NUM_EPOCHS):
         key_train_epoch = jax.random.fold_in(key_train, data=epoch)
-        dataset = make_dataset(next(sequences), length=LEN_SEQUENCE)
-        s: optax.State
-        for l, s, v in (  # type: ignore
+        dataset = jax.tree.map(make_dataset, next(sequences), LEN_SEQUENCE)
+        state: optax.OptState | None = None
+        variables: Any | None = None
+        for loss, s, v in (  # type: ignore
             pbar := tqdm(trainer(key_train_epoch), total=len(dataset))
         ):
-            pbar.set_description(f"{l:0.8f}")
+            pbar.set_description(f"{loss:0.8f}")
+            state = s
+            variables = v
         checkpoint_manager.save(
             step=epoch,
-            args=Composite(state=StandardSave(s), variables=StandardSave(v)),
+            args=Composite(
+                state=StandardSave(state),
+                variables=StandardSave(variables),
+            ),
         )
 
     checkpoint_manager.wait_until_finished()
+
+
+def make_batches(dataset: jax.Array, batch_size: int):
+    return dataset.reshape(-1, batch_size, dataset.shape[-1])
 
 
 if __name__ == "__main__":

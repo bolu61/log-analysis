@@ -40,9 +40,7 @@ class InterleavedHiddenMarkovChain(nn.Module):
             (self.num_chains, self.num_states, self.num_symbols),
             jnp.float32,
         )
-        self.choice = self.param(
-            "choice", self.choice_initializer, (self.num_chains,), jnp.float32
-        )
+        self.choice = self.param("choice", self.choice_initializer, (self.num_chains,), jnp.float32)
 
         self.prior = self.param(
             "prior",
@@ -68,9 +66,7 @@ class InterleavedHiddenMarkovChain(nn.Module):
     def sample(self, key):
         """sample from the stationary distribution"""
         p = jnp.exp(nn.log_softmax(self.prior, axis=-1))
-        return jax.vmap(lambda key, p: jax.random.choice(key, self.num_states, p=p))(
-            jax.random.split(key, len(p)), p
-        )
+        return jax.vmap(lambda key, p: jax.random.choice(key, self.num_states, p=p))(jax.random.split(key, len(p)), p)
 
 
 def interleaved_random_hmm(num_chains: int, num_states: int):
@@ -80,7 +76,7 @@ def interleaved_random_hmm(num_chains: int, num_states: int):
 
     def transition_initializer(key, shape_, dtype):
         key, subkey = jax.random.split(key)
-        t = jnp.log(
+        return jnp.log(
             jax.random.beta(
                 subkey,
                 a=0.5,
@@ -89,7 +85,6 @@ def interleaved_random_hmm(num_chains: int, num_states: int):
                 dtype=dtype,
             )
         )
-        return t
 
     def emission_initializer(_, shape, dtype):
         num_chains, num_states, num_symbols = shape

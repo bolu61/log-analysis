@@ -3,7 +3,6 @@ from functools import partial
 
 import flax.linen as nn
 import jax
-import jax.numpy as jnp
 
 __all__ = ["DeepSpan"]
 
@@ -16,24 +15,17 @@ def apply_dropout[**A, B](f: Callable[A, B], dropout_rate: float) -> Callable[A,
     return wrapper
 
 
-@partial(jax.jit, static_argnames=("axis",))
-def reglu(x: jax.Array, axis: int = -1) -> jax.Array:
-    assert x.shape[axis] % 2 == 0
-    a, b = jnp.split(x, 2, axis)
-    return a + nn.relu(b)
-
-
 class FeedForward(nn.Module):
     dim: int
     features: int
 
     @nn.compact
     def __call__(self, x: jax.Array, dropout_rate: float = 0) -> jax.Array:
-        l1 = nn.Dense(self.dim * 2)
+        l1 = nn.Dense(self.dim)
         l2 = nn.Dense(self.features)
         dropout = nn.Dropout(rate=dropout_rate, deterministic=False)
         norm = nn.LayerNorm()
-        return norm(x + l2(dropout(reglu(l1(x)))))
+        return norm(x + l2(dropout(nn.relu(l1(x)))))
 
 
 class GRU(nn.Module):
@@ -43,14 +35,16 @@ class GRU(nn.Module):
     def __call__(self, xs: jax.Array, dropout_rate: float = 0) -> jax.Array:
         state = self.param("initial_state", nn.initializers.normal(), (self.dim,))
         cell = nn.GRUCell(self.dim)
+
         @partial(nn.scan, variable_broadcast="params", split_rngs={"params": False}, in_axes=0, out_axes=0)
         def scan(cell, carry, x):
             return cell(carry, x)
+
         linear = nn.Dense(self.dim)
         dropout = nn.Dropout(rate=dropout_rate, deterministic=False)
         norm = nn.LayerNorm()
         state, ys = scan(cell, state, xs)
-        return norm(xs + linear(dropout(reglu(ys))))
+        return norm(xs + linear(dropout(nn.relu(ys))))
 
 
 class DeepSpanLayer(nn.Module):

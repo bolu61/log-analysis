@@ -1,7 +1,8 @@
 # %%
 import csv
 from collections import defaultdict
-from typing import Sequence, cast
+from collections.abc import Sequence
+from typing import cast
 
 import jax
 import jax.numpy as jnp
@@ -10,7 +11,7 @@ from experiments.datasets.dataset import dataset
 
 def masked_csv_dataset(key, path, size, length):
     action_map = defaultdict(lambda: len(action_map))
-    with open(path, "r") as f:
+    with open(path) as f:
         data = jnp.array([action_map[a] for _, _, a in csv.reader(f)], dtype=jnp.uint32)
 
     data = data[: (len(data) // length) * length]

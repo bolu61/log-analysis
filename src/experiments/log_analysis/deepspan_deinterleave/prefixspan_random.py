@@ -3,18 +3,18 @@ from collections.abc import Generator, Sequence
 
 import jax
 import jax.numpy as jnp
-
-from deepspan.core.prefixspan import prefixspan
-from deepspan.separate import separate
-from experiments.deepspan_deinterleave.datasets.synthetic import (
-    random_sequence_generator,
+from experiments.log_analysis.deepspan_deinterleave.datasets.synthetic import (
     make_dataset,
+    random_sequence_generator,
 )
-from experiments.deepspan_deinterleave.metrics.grouping import (
+from experiments.log_analysis.deepspan_deinterleave.metrics.grouping import (
     grouping_accuracy,
     grouping_alignment,
     grouping_length,
 )
+from prefixspan import prefixspan
+
+from deepspan.separate import separate
 
 NUM_STATES = 8
 NUM_CHAINS = 3
@@ -41,20 +41,21 @@ def main(*_):
 
     _, sequence_train = next(sequences)
     dataset = make_dataset(sequence_train, LEN_SEQUENCE)
-    trie = prefixspan([*map(lambda a: a.tolist(), dataset)], minsup=MINSUP)
+    trie = prefixspan(dataset, minsup=MINSUP)
 
-    choices = []
-    for group in separate(
-        trie=trie,
-        seq=jnp.stack(next(sequences)).transpose(),
-        maxlen=LEN_SEQUENCE,
-        key=lambda cy: cy[1].item(),
-    ):
-        choices.append(jnp.stack(group)[:, 0])
+    choices = [
+        jnp.stack(group)[:, 0]
+        for group in separate(
+            trie=trie,
+            seq=jnp.stack(next(sequences)).transpose(),
+            maxlen=LEN_SEQUENCE,
+            key=lambda cy: cy[1].item(),
+        )
+    ]
 
-    print(f"grouping_accuracy: {grouping_accuracy(choices)}")
-    print(f"grouping_length: {grouping_length(choices)}")
-    print(f"grouping_alignment: {grouping_alignment(choices)}")
+    sys.stdout.write(f"grouping_accuracy: {grouping_accuracy(choices)}\n")
+    sys.stdout.write(f"grouping_length: {grouping_length(choices)}\n")
+    sys.stdout.write(f"grouping_alignment: {grouping_alignment(choices)}\n")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from collections.abc import Generator
 from itertools import count
 
 import jax
+from jaxtyping import Array
 
 from deepspan.core.hmm import interleaved_cyclic_hmm, interleaved_random_hmm
 
@@ -30,9 +31,7 @@ def random_sequence_generator(
     key: jax.Array, length: int, num_chains: int, num_states: int
 ) -> Generator[tuple[jax.Array, jax.Array], None, None]:
     mc = interleaved_random_hmm(num_chains=num_chains, num_states=num_states)
-    variables = mc.init(
-        jax.random.fold_in(key, 0), jax.random.key(0), jax.numpy.array([0])
-    )
+    variables = mc.init(jax.random.fold_in(key, 0), jax.random.key(0), jax.numpy.array([0]))
 
     state: jax.Array = mc.apply(variables, jax.random.fold_in(key, 0), method=mc.sample)  # type: ignore
 
@@ -47,11 +46,5 @@ def random_sequence_generator(
         yield cs, ys
 
 
-def make_dataset(seq: jax.Array, length: int) -> list[jax.Array]:
-    assert length > 2
-
-    def gen_sample():
-        for i in range(0, len(seq), length):
-            yield seq[i : i + length]
-
-    return [*gen_sample()]
+def make_dataset(seq: Array, length: int) -> list[Array]:
+    return [seq[i : i + length] for i in range(0, len(seq), length)]

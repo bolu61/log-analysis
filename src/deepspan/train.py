@@ -1,12 +1,11 @@
 from collections.abc import Generator, Sequence
 from functools import partial
-from typing import Any
 
 import jax
 import jax.numpy as jnp
 import optax
 
-from .core.deepspan import DeepSpan
+from deepspan.core.deepspan import DeepSpan
 
 
 def bceexp(x, y):
@@ -30,19 +29,19 @@ class Trainer:
     def __init__(
         self,
         model: DeepSpan,
-        optimizer: optax.,
+        optimizer: optax.GradientTransformation,
         dataset: Sequence[jax.Array],
         dropout_rate: float,
         ema_decay: float = 0.9,
         batch_size: int = 1,
     ):
-        self.model = model
-        self.optimizer = optimizer
-        self.dataset = dataset
+        self.model: DeepSpan = model
+        self.optimizer: optax.GradientTransformation = optimizer
+        self.dataset: Sequence[jax.Array] = dataset
         self.dropout_rate = dropout_rate
         self.ema_decay = ema_decay
         self.batch_size = batch_size
-        
+
     def __len__(self):
         return len(self.dataset) // self.batch_size
 
@@ -70,9 +69,7 @@ class Trainer:
             return value, state, params
 
         key_model, key = jax.random.split(key)
-        variables = self.model.init(
-            key_model, jnp.zeros((0, 0), dtype=jnp.int32), self.dropout_rate
-        )
+        variables = self.model.init(key_model, jnp.zeros((0, 0), dtype=jnp.int32), self.dropout_rate)
         state = self.optimizer.init(variables)
         batches = make_batches(self.dataset, self.batch_size)
 

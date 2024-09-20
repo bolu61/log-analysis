@@ -1,21 +1,16 @@
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, Callable, Generator, Generic, Sequence, TypeVar, Union
-
-__all__ = ["dataset"]
+from typing import Any, Generic, TypeVar, Union
 
 S = TypeVar("S")
 T = TypeVar("T")
-
-
-def dataset(data: Sequence[T]) -> "Dataset[T]":
-    return Dataset(data)
 
 
 @dataclass
 class Dataset(Generic[T]):
     data: Sequence[T]
 
-    def __iter__(self) -> Generator[T, None, None]:
+    def __iter__(self) -> Iterator[T]:
         yield from self.data
 
     def __getitem__(self, key) -> T:

@@ -1,11 +1,13 @@
-import os
 import sys
 from pathlib import Path
+from typing import Any
 
-import flax.linen as nn
 import jax
-import jax.numpy as jnp
 import optax
+from experiments.log_analysis.deepspan_deinterleave.datasets.synthetic import (
+    make_dataset,
+    random_sequence_generator,
+)
 from orbax.checkpoint import (
     CheckpointManager,
     CheckpointManagerOptions,
@@ -14,12 +16,7 @@ from orbax.checkpoint.args import Composite, StandardSave
 from tqdm import tqdm
 
 from deepspan.core.deepspan import DeepSpan
-from deepspan.train import train
-from experiments.deepspan_deinterleave.datasets.batches import make_batches
-from experiments.deepspan_deinterleave.datasets import make_dataset
-from experiments.deepspan_deinterleave.datasets.synthetic import (
-    random_sequence_generator,
-)
+from deepspan.train import Trainer
 
 __all__ = ()
 
@@ -38,57 +35,36 @@ jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_debug_nans", True)
 
 
-def make_sequence_generator(key):
-    return random_sequence_generator(
-        key,
+def main(*_):
+    key = jax.random.key(SEED)
+    key_seq, key_train = jax.random.split(key, 2)
+
+    sequences = random_sequence_generator(
+        key_seq,
         length=LEN_DATASET * LEN_SEQUENCE,
         num_chains=NUM_CHAINS,
         num_states=NUM_STATES,
     )
 
+    dataset = jax.tree.map(make_dataset, next(sequences), LEN_SEQUENCE)
 
-def make_model(key):
-    model = nn.vmap(
-        DeepSpan,
-        in_axes=(0, None),
-        out_axes=0,
-        variable_axes={"params": None},
-        split_rngs={"params": False, "dropout": True},
-    )(
+    model = DeepSpan(
         num_observations=NUM_STATES * NUM_CHAINS,
         num_layers=NUM_LAYERS,
         dim=DIM_EMB,
         ffn_dim=DIM_FFN,
     )
-    variables = model.init(key, jnp.zeros((0, 0), dtype=jnp.int32), 0)
-    return model, variables
-
-
-def make_optimizer(variables):
     optimizer = optax.adam(learning_rate=LEARNING_RATE)
-    state = optimizer.init(variables)
-    return optimizer, state
+    trainer = Trainer(
+        model=model,
+        optimizer=optimizer,
+        dataset=dataset,
+        batch_size=1,
+        dropout_rate=0.2,
+        ema_decay=0.9,
+    )
 
-
-def enforce_teacher(seqs: list[jax.Array]) -> list[jax.Array]:
-    def gen_seqs():
-        for seq in seqs:
-            for i in range(len(seq)):
-                yield seq[:i]
-
-    return [*gen_seqs()]
-
-
-def main(*_):
-    seed = os.getenv("SEED", default=0xB0BAB0BA)
-    key = jax.random.key(seed)
-    key_seq, key_model, key_train = jax.random.split(key, 3)
-
-    sequences = make_sequence_generator(key_seq)
-    model, variables = make_model(key_model)
-    optimizer, state = make_optimizer(variables)
-
-    checkpoint_directory = Path("checkpoints/deepspan_random").absolute()
+    checkpoint_directory = Path("checkpoints/deepspan_cyclic").absolute()
     checkpoint_options = CheckpointManagerOptions(max_to_keep=3, create=True)
     checkpoint_manager = CheckpointManager(
         directory=checkpoint_directory,
@@ -98,31 +74,28 @@ def main(*_):
 
     for epoch in range(NUM_EPOCHS):
         key_train_epoch = jax.random.fold_in(key_train, data=epoch)
-        dataset = make_dataset(next(sequences), length=LEN_SEQUENCE)
-        batches = make_batches(dataset, 1)
-        for loss, state, variables in (
-            pbar := tqdm(
-                train(
-                    key_train_epoch,
-                    optimizer=optimizer,
-                    state=state,
-                    model=model,
-                    variables=variables,
-                    dataset=batches,
-                    dropout_rate=0.7,
-                ),
-                total=len(batches),
-            )
+        dataset = jax.tree.map(make_dataset, next(sequences), LEN_SEQUENCE)
+        state: optax.OptState | None = None
+        variables: Any | None = None
+        for loss, s, v in (  # type: ignore
+            pbar := tqdm(trainer(key_train_epoch), total=len(dataset))
         ):
             pbar.set_description(f"{loss:0.8f}")
+            state = s
+            variables = v
         checkpoint_manager.save(
             step=epoch,
             args=Composite(
-                state=StandardSave(state), variables=StandardSave(variables)
+                state=StandardSave(state),
+                variables=StandardSave(variables),
             ),
         )
 
     checkpoint_manager.wait_until_finished()
+
+
+def make_batches(dataset: jax.Array, batch_size: int):
+    return dataset.reshape(-1, batch_size, dataset.shape[-1])
 
 
 if __name__ == "__main__":

@@ -1,18 +1,21 @@
 import re
-import warnings
-from collections.abc import Generator
-from datetime import datetime
+from collections.abc import Generator, Iterable, Iterator
 from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
 import pandas as pd
 from dateutil.parser import parse as parse_dt
+from experiments.log_analysis.deepspan_deinterleave.datasets import Dataset
+from jaxtyping import Array
 from logparse.drain3 import parser as drain3
 from logparse.parser import Parser
 
-from experiments.log_analysis.deepspan_deinterleave.datasets import Dataset
+if TYPE_CHECKING:
+    from datetime import datetime
+
+jax.config.update("jax_enable_x64", True)
 
 LOGS_BASE_PATH = Path(__file__).parent / "apache" / "logs"
 LOGS_FORMAT_PATTERN = re.compile(
@@ -51,24 +54,23 @@ def preprocess(
             )
         )
         event_ids.append(next(parser([match.group("message")])).id)
-    return pd.Series(event_ids, timestamps, dtype=int)
+    return pd.Series(event_ids, timestamps, dtype=jnp.uint64)
 
 
-def make_database(name: str, window_size, min_length) -> Dataset:
+def make_database(name: str, window_size, min_length) -> Dataset[Array]:
     if not LOGS_BASE_PATH.exists():
-        raise RuntimeError(f"{LOGS_BASE_PATH=} does not exist")
+        msg = f"{LOGS_BASE_PATH=} does not exist"
+        raise RuntimeError(msg)
 
     parser = make_parser(name)
 
-    items = []
-    for path in get_paths(name):
+    def gen_windows(path: Path) -> Iterator[Array]:
         with path.open("r") as file:
             seq = preprocess(parser, file)
             if seq.empty:
-                warnings.warn(f"no logs parsed in {file=}")
-                continue
+                return
             seq.sort_index(inplace=True)
         for w in seq.rolling(window_size, min_periods=min_length):
-            items.append(jnp.asarray(w.values, copy=False))
+            yield jnp.asarray(w.values, copy=False, dtype=jnp.uint64)
 
-    return items
+    return [window for path in get_paths(name) for window in gen_windows(path)]

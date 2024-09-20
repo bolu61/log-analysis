@@ -1,16 +1,13 @@
 from collections import defaultdict
-from collections.abc import Generator, Iterator, Sequence, Iterable
+from collections.abc import Generator, Iterable, Iterator, Sequence
 
-from .database import Database
+type Database[T] = Sequence[Sequence[T]]
 
 
 class DictTrie[K]:
-    _children: dict[K, "DictTrie[K]"]
-    _count: int
-
     def __init__(self, count: int):
-        self._children = dict()
-        self._count = count
+        self._children: dict[K, DictTrie[K]] = {}
+        self._count: int = count
 
     @property
     def count(self):
@@ -23,7 +20,7 @@ class DictTrie[K]:
                     k = next(it)
                 except StopIteration:
                     return t
-                t = t._children[k]
+                t = t[k]
 
         return _find(self, iter(seq))
 
@@ -31,12 +28,7 @@ class DictTrie[K]:
         self._children[key] = t
 
     def __str__(self) -> str:
-        return (
-            "("
-            + ",".join((str(k) + str(t) for k, t in self._children.items()))
-            + "):"
-            + str(self._count)
-        )
+        return "(" + ",".join((str(k) + str(t) for k, t in self._children.items())) + "):" + str(self._count)
 
     def __getitem__(self, key: K) -> "DictTrie[K]":
         return self._children[key]
@@ -45,25 +37,23 @@ class DictTrie[K]:
         return key in self._children
 
     def prob(self, key: K) -> float:
-        return self._children[key]._count / self._count
+        return self._children[key].count / self.count
 
     @property
     def keys(self) -> list[K]:
-        return sorted(self._children.keys(), reverse=True, key=lambda k: self._children[k]._count)
+        return sorted(self._children.keys(), reverse=True, key=lambda k: self._children[k].count)
 
 
 type Index = tuple[int, int]
 
 
-def project[
-    T
-](db: Database[T], indexes: Iterable[Index], s: T) -> Generator[tuple[int, int], None, None]:
+def project[T](db: Database[T], indexes: Iterable[Index], s: T) -> Generator[tuple[int, int], None, None]:
     for i, j in indexes:
         try:
             yield i, db[i].index(s, j) + 1
         except ValueError:
             continue
-        
+
 
 def unique[T](it: Iterable[T]) -> Generator[T, None, None]:
     seen = set()

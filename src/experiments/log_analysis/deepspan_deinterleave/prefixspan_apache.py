@@ -1,14 +1,7 @@
-from pathlib import Path
-from random import sample
+import sys
 
-import jax.numpy as jnp
-import pandas as pd
-from pandas import Series
-
-from deepspan.core.prefixspan import prefixspan
-from deepspan.separate import separate
 from experiments.log_analysis.deepspan_deinterleave.datasets.real import make_database
-from experiments.log_analysis.deepspan_deinterleave.metrics.grouping import grouping_length
+from prefixspan import prefixspan
 
 NUM_STATES = 8
 NUM_CHAINS = 3
@@ -26,7 +19,12 @@ def as_id(event_id: str) -> int:
 
 def main():
     for subject in SUBJECTS:
-        database = make_database(subject, window_size="8s", min_length=2)
+        dataset = make_database(subject, window_size="8s", min_length=2)
+
+        trie = prefixspan([*dataset], minsup=len(dataset) // 5)  # fmt: ignore
+        sys.stdout.write(str(trie) + "\n")
+        return trie
+    return None
 
     # trie = prefixspan([*map(lambda a: a.tolist(), database)], minsup=int(len(database) * 0.2))
 
