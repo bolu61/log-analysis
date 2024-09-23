@@ -1,16 +1,17 @@
+from itertools import islice
 import re
-from collections.abc import Generator, Iterable, Iterator
+from collections.abc import Generator, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pandas as pd
 from dateutil.parser import parse as parse_dt
-from experiments.log_analysis.deepspan_deinterleave.datasets import Dataset
-from jaxtyping import Array
 from logparse.drain3 import parser as drain3
 from logparse.parser import Parser
+
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -57,20 +58,23 @@ def preprocess(
     return pd.Series(event_ids, timestamps, dtype=jnp.uint64)
 
 
-def make_database(name: str, window_size, min_length) -> Dataset[Array]:
+def make_dataset(name: str, window_size: int | str, max_sequence_length: int, max_dataset_length: int) -> list[np.ndarray]:
     if not LOGS_BASE_PATH.exists():
         msg = f"{LOGS_BASE_PATH=} does not exist"
         raise RuntimeError(msg)
 
     parser = make_parser(name)
 
-    def gen_windows(path: Path) -> Iterator[Array]:
-        with path.open("r") as file:
-            seq = preprocess(parser, file)
-            if seq.empty:
-                return
-            seq.sort_index(inplace=True)
-        for w in seq.rolling(window_size, min_periods=min_length):
-            yield jnp.asarray(w.values, copy=False, dtype=jnp.uint64)
+    def gen_windows():
+        for path in get_paths(name):
+            with path.open("r") as file:
+                seq = preprocess(parser, file)
+                if seq.empty:
+                    return
+                seq.sort_index(inplace=True)
+            for w in seq.rolling(window_size):
+                if len(w) < 2:
+                    continue
+                yield w.to_numpy(dtype=np.uint64, copy=False)[:max_sequence_length]
 
-    return [window for path in get_paths(name) for window in gen_windows(path)]
+    return [*islice(gen_windows(), max_dataset_length)]
