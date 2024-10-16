@@ -10,7 +10,7 @@ from experiments.log_analysis.deepspan_deinterleave.datasets.synthetic import (
 from experiments.log_analysis.deepspan_deinterleave.metrics.grouping import (
     grouping_accuracy,
     grouping_alignment,
-    grouping_length,
+    mean_grouping_length,
 )
 from prefixspan import prefixspan
 
@@ -54,7 +54,7 @@ def main(*_):
     ]
 
     sys.stdout.write(f"grouping_accuracy: {grouping_accuracy(choices)}\n")
-    sys.stdout.write(f"grouping_length: {grouping_length(choices)}\n")
+    sys.stdout.write(f"grouping_length: {mean_grouping_length(choices)}\n")
     sys.stdout.write(f"grouping_alignment: {grouping_alignment(choices)}\n")
 
 
