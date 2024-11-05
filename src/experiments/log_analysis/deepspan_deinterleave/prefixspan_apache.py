@@ -1,6 +1,5 @@
 import json
 import sys
-import warnings
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any
 
@@ -113,5 +112,4 @@ def main():
 
 
 if __name__ == "__main__":
-    with warnings.catch_warnings(action="ignore"):
-        main()
+    main()
