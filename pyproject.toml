@@ -22,6 +22,7 @@ dependencies = [
   "scipy",
   "cliffs-delta",
   "tqdm",
+  "drain3",
 ]
 
 [project.urls]

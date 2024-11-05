@@ -1,17 +1,20 @@
 import re
 from collections.abc import Generator, Iterable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable
 
 import dateutil.parser
-import jax
-import jax.numpy as jnp
+import numpy as np
 import pandas as pd
+from drain3 import TemplateMiner
+from drain3.template_miner_config import TemplateMinerConfig
 from logparse.drain3 import parser as drain3
 from logparse.parser import Parser
 
-jax.config.update("jax_enable_x64", True)
+DRAIN3_CONFIG = TemplateMinerConfig()
 
 LOGS_BASE_PATH = Path(__file__).parent / "apache" / "logs"
 LOGS_FORMAT_PATTERNS = [
@@ -31,18 +34,35 @@ DATETIME_PATTERN = re.compile(
 MIN_FILE_SIZE = 64
 
 
+@dataclass
+class Instance:
+    file: Path
+    line_numbers: list[int]
+    event_ids: list[int]
+
+
+@dataclass
+class LogRecord:
+    timestamp: datetime
+    lineno: int
+    event_id: int
+
+
 def get_paths(name: str) -> Generator[Path, None, None]:
     yield from (LOGS_BASE_PATH / name).rglob("*-output.txt")
 
 
-def make_parser(name: str) -> Parser:
-    lines: list[str] = []
+def make_parser(name: str) -> Callable[[str], int]:
+    miner = TemplateMiner(config=DRAIN3_CONFIG)
     for path in get_paths(name):
         with path.open("r") as file:
-            if len([*file]) < MIN_FILE_SIZE:
-                continue
-            lines.extend(file)
-    return drain3(lines)
+            for line in file:
+                miner.add_log_message(line)
+
+    def parser(line: str) -> int:
+        return miner.add_log_message(line)["cluster_id"]
+
+    return parser
 
 
 def match(line: str) -> re.Match | None:
@@ -54,63 +74,72 @@ def match(line: str) -> re.Match | None:
 
 
 def preprocess(
-    parser: Parser,
+    parse: Callable[[str], int],
     lines: Iterable[str],
-) -> pd.Series:
-    timestamps: list[datetime] = []
-    event_ids: list[int] = []
-    for line in lines:
+) -> list[LogRecord]:
+    records: list[LogRecord] = []
+    for lineno, line in enumerate(lines):
         if (m := match(line)) is None:
             continue
-        timestamps.append(
-            dateutil.parser.parse(
-                m.group("timestamp"),
+        records.append(
+            LogRecord(
+                timestamp=dateutil.parser.parse(m.group("timestamp")),
+                lineno=lineno,
+                event_id=parse(m.group("message")),
             )
         )
-        event_ids.append(next(parser([m.group("message")])).id)
-    return pd.Series(event_ids, timestamps, dtype=jnp.uint64)
+    return records
 
 
 def read_file(
-    parser: Parser, path: Path, window_size, max_sequence_length: int
-) -> list[jnp.ndarray]:
+    parse: Callable[[str], int], path: Path, window_size, max_sequence_length: int
+) -> list[Instance]:
     with path.open("r") as f:
         lines = [*f]
         if len(lines) > 100_000:
             return []
-        seq = preprocess(parser, lines)
-    seq.sort_index(inplace=True)
-    result = []
-    for w in seq.rolling(window_size):
-        if len(w) < 2:
+        records = preprocess(parse, lines)
+    frame = (
+        pd.DataFrame(records, columns=["timestamp", "lineno", "event_id"])
+        .set_index("timestamp")
+        .sort_index()
+    )
+    results = []
+    for window in frame.rolling(window_size):
+        if len(window) < 2:
             continue
-        result.append(
-            jnp.asarray(w, dtype=jnp.uint64, copy=False)[:max_sequence_length]
+        window = window[:max_sequence_length]
+        results.append(
+            Instance(
+                file=path,
+                line_numbers=window["lineno"].to_list(),
+                event_ids=window["event_id"].to_list(),
+            )
         )
-    return result
+    return results
 
 
 def make_dataset(
-    key: jax.typing.ArrayLike,
+    seed: int,
     name: str,
     window_size: int | str,
     max_sequence_length: int,
     max_dataset_length: int,
-) -> list[jnp.ndarray]:
+) -> list[Instance]:
     if not LOGS_BASE_PATH.exists():
         msg = f"{LOGS_BASE_PATH=} does not exist"
         raise RuntimeError(msg)
 
-    parser = make_parser(name)
+    parse = make_parser(name)
 
-    def gen_windows() -> Iterator[jnp.ndarray]:
-        futures: list[Future[list[jnp.ndarray]]] = []
+    def gen_windows() -> Iterator[Instance]:
+        futures: list[Future[list[Instance]]] = []
         with ThreadPoolExecutor() as executor:
             for path in get_paths(name):
                 futures.append(
                     executor.submit(
                         read_file,
-                        parser,
+                        parse,
                         path,
                         window_size,
                         max_sequence_length,
@@ -120,9 +149,8 @@ def make_dataset(
             yield from future.result()
 
     def sample_windows(windows):
-        for i in jax.random.choice(
-            key, len(windows), shape=(max_dataset_length,), replace=False
-        ):
+        rng = np.random.default_rng(seed=seed)
+        for i in rng.choice(len(windows), size=(max_dataset_length,), replace=False):
             yield windows[i]
 
     return [*sample_windows([*gen_windows()])]
